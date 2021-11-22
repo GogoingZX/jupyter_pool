@@ -13,7 +13,6 @@ result_set = ["Y", "N"]
 import operator
 from math import log
 
-
 def calculate_shannon_entropy(dataset):
     entity_num = len(dataset) # data_set -- list_like
     label_stats = {}
@@ -135,3 +134,48 @@ def create_decision_tree__id3(
         )
     
     return tree
+
+
+"""
+{
+    "is_big": {
+        0: "N",
+        1: {
+            "is_white": {
+                0: "N",
+                1: "Y"
+            }
+        }
+    }
+}
+
+tree_dict = {"is_big": {0: "N", 1: {"is_white": {0: "N", 1: "Y"}}}}
+"""
+
+def get_leaf_qty(tree_dict):
+    leaf_qty = 0
+    first_key = list(tree_dict.keys())[0]
+    sub_tree_dict = tree_dict[first_key]
+    for key in sub_tree_dict.keys():
+        if type(sub_tree_dict[key]).__name__ == "dict": # if type(sub_tree_dict[key]) is dict
+            leaf_qty = leaf_qty + get_leaf_qty(sub_tree_dict[key])
+        else:
+            leaf_qty += 1
+            
+    return leaf_qty
+
+
+def get_tree_depth(tree_dict):
+    max_depth = 0
+    first_key = list(tree_dict.keys())[0]
+    sub_tree_dict = tree_dict[first_key]
+    for key in sub_tree_dict.keys():
+        if type(sub_tree_dict[key]) is dict:
+            this_depth = 1 + get_tree_depth(sub_tree_dict[key])
+        else:
+            this_depth = 1
+            
+        if this_depth > max_depth:
+            max_depth = this_depth
+    
+    return max_depth
