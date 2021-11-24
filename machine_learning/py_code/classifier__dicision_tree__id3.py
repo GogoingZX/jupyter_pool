@@ -1,87 +1,126 @@
-"""
-feature_name_list = ["is_big", "is_white"] --> is_big: (0, 1); is_white: (0, 1)
-dataset = [
+import sys
+import os
+import time
+import datetime
+import pickle
+import json
+import re
+import operator
+
+from math import log
+from collections import defaultdict
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+
+sys.path.append("/Users/xuzhu/Desktop/code/assistants") # my package
+from toolbox.os_assistant import scan_folder
+
+
+DATA_FOLDER = "/Users/xuzhu/Desktop/data/open_dataset"
+project_folder = os.path.join(DATA_FOLDER, "test__decision_tree")
+
+raw_data = [
     [1, 1, "Y"],
     [1, 0, "N"],
     [1, 1, "Y"],
     [0, 1, "N"],
     [0, 1, "N"]
 ]
-result_set = ["Y", "N"]
-"""
+raw_df = pd.DataFrame(
+    data=raw_data,
+    columns=["is_big", "is_white", "good"]
+)
 
-import operator
-from math import log
 
-def calculate_shannon_entropy(dataset):
-    entity_num = len(dataset) # data_set -- list_like
-    label_stats = {}
-    for entity_vector in dataset:
-        current_label = entity_vector[-1] 
-            # entity_vector -- list_like [d1, d2, ..., dn], assume db is the class
-        if current_label not in label_stats.keys():
-            label_stats[current_label] = 0
-        else:
-            pass
-        label_stats[current_label] += 1
-
+def calculate_shannon_entropy(df):
+    """
+    Calculate Shannon entropy of the dataset
+    """
+    entity_qty = df.shape[0]
+    class_stats = defaultdict(int)
+    for index, row in df.iterrows():
+        current_class = row[-1]
+        class_stats[current_class] += 1
+    
     shannon_entropy = 0
-    for key in label_stats.keys(): # slightly slower than 'for key in label_stats:'
-        label_prob = label_stats[key] / entity_num
-        shannon_entropy = shannon_entropy - label_prob * log(label_prob, 2)
+    for key in class_stats.keys():
+        class_prob = class_stats[key] / entity_qty
+        shannon_entropy = shannon_entropy - class_prob * log(class_prob, 2)
     
     return shannon_entropy
 
 
 def split_dataset(
-    dataset,
-    axis,
-    value
+    df,
+    feature_name,
+    feature_value
 ):
-    new_dataset=[]
-    for entity_vector in dataset:
-        if entity_vector[axis] == value: # choose entity, entity_vector: [d1, d2, d3]
-            reduced_entity_vector = entity_vector[:axis]
-            reduced_entity_vector.extend(entity_vector[axis+1:]) # reduced_entity_vector: [d1, d3]
-                # drop entity_vector[axis] and keep the original list unchanged
-            new_dataset.append(reduced_entity_vector)
-        else:
-            pass
-            
-    return new_dataset
-
-
-def choose_feature_to_split(dataset):
-    feature_cnt = len(dataset[0]) - 1
-    base_entropy = calculate_shannon_entropy(dataset)
-    best_info_gain = 0
-    best_feature_axis = -1 
-        # create a default best feature
-        # -1 means no best feature and choose the last one as the best feature
+    """
+    Split dataset based on Shannon entropy
     
-    for i in range(feature_cnt):
-        feature_list = [entity_tmp[i] for entity_tmp in dataset]
-        uniq_feature_set = set(feature_list)
+    If the entity's feature value = specific feature value
+    ==> matched, grab this entity and delete this used feature to build a new dataset
+    ==> all features only use once in this algorithm !!!
+    """
+    
+    col_list = df.columns.to_list()
+    col_list.remove(feature_name)
+    new_df = pd.DataFrame(columns=col_list) # make sure the column position unchanged
+    
+    for index, row in df.iterrows(): # scan all rows
+        if row[feature_name] == feature_value: 
+            new_row = row.drop(feature_name)
+            new_df = new_df.append(new_row, ignore_index=True) # Q: why does the col index change randomly?
+        else: # not matched
+            pass
+    
+    return new_df
+
+
+def choose_best_feature_to_split(df):
+    """
+    Compare different features and choose the best one to split the dataset
+    
+    信息增益代表了在一个条件下, 信息复杂度(不确定性)减少的程度
+    如果选择一个特征, 信息增益最大(信息不确定性减少的程度最大), 那么我们就选取这个特征
+    信息增益 = 信息熵 - 条件熵
+    ==> https://zhuanlan.zhihu.com/p/26596036
+    """
+    entropy__base = calculate_shannon_entropy(df)
+    info_gain__max = 0
+    
+    # feature_qty = len(df.columns) - 1 # assume the last one column is the label
+    feature_name_list = df.columns.to_list()[:-1] # exclude the label
+    feature_qty = len(feature_name_list)
+    best_feature_name = feature_name_list[-1]
+    
+    for feature_name in feature_name_list: # scan all feature columns
+        # split dataset by using this feature, calculate the information gain
+        current_feature_value_list = [row[feature_name] for index, row in df.iterrows()]
+        uniq_feature_value_set = set(current_feature_value_list) # uniq value (or we can say 'class')
         
-        new_entropy = 0
-        for feature_value in uniq_feature_set:
-            sub_dataset = split_dataset(
-                dataset=dataset,
-                axis=i,
-                value=feature_value
+        entropy__condition = 0
+        for feature_value in uniq_feature_value_set: # calculate the conditional entropy
+            df__new = split_dataset(
+                df=df,
+                feature_name=feature_name,
+                feature_value=feature_value
             )
-            prob = len(sub_dataset) / len(dataset)
-            new_entropy += prob * calculate_shannon_entropy(sub_dataset) # weighted
-            
-        info_gain = new_entropy - base_entropy
-        if info_gain <= best_info_gain:
-            best_info_gain = info_gain
-            best_feature_axis = i
+            prob = df__new.shape[0] / df.shape[0] # calculate the probability of the subclass
+            entropy__condition = entropy__condition + prob * calculate_shannon_entropy(df__new)
+        
+        info_gain = entropy__base - entropy__condition
+        if info_gain > info_gain__max:
+            info_gain__max = info_gain
+            best_feature_name = feature_name
         else:
             pass
     
-    return best_feature_axis   
-
+    return best_feature_name
+            
 
 def majority_vote(class_list):
     class_stats = {}
@@ -89,93 +128,109 @@ def majority_vote(class_list):
         if class_value not in class_stats.keys():
             class_stats[class_value] = 0
         else:
-            pass
-        class_stats[class_value] += 1
-    
-    sorted_class_stats = sorted(
+            class_stats[class_value] += 1
+        
+    sorted_class_list = sorted(
         class_stats.items(),
         key=operator.itemgetter(1),
         reverse=True
     )
+    # [(key, value), (key, value),... ]
     
-    voted_class_value = sorted_class_stats[0][0]
-    return voted_class_value
+    majority_class_value = sorted_class_list[0][0] # choose the key (class value) of the first element
+    return majority_class_value
 
 
-def create_decision_tree__id3(
-    dataset,
-    feature_name_list
-):
-    class_list = [entity_temp[-1] for entity_temp in dataset]
+def create_decision_tree__id3(df):
+    """
+    Create a decision tree based on ID3 algorithm
+    All features will be used once only
+    """
+    label_list = [row[-1] for index, row in df.iterrows()]
+    if label_list.count(label_list[0]) == len(label_list): # stop condition 1: only 1 class ==> leaf node
+        label = label_list[0]
+        return label
+    if len(df.iloc[0]) == 1: # stop condition 2: no other features
+        # used all features but there still be several classes
+        # need choose the majority class
+        label = majority_vote(label_list)
+        return label
     
-    if class_list.count(class_list[0]) == len(class_list): # leaf node -- stop condition 1
-        return class_list[0]
-    if len(dataset[0]) == 1: # traversed all features -- stop condition 2
-        return majority_vote(class_list)
-    
-    feature_axis = choose_feature_to_split(dataset)
-    feature_name = feature_name_list[feature_axis]
+    feature_name_list = df.columns.to_list()[:-1] # exclude the label
+    feature_name = choose_best_feature_to_split(df)
     tree = {
         feature_name: {}
     }
-    del feature_name_list[feature_axis]
+    feature_name_list.remove(feature_name)
     
-    feature_value_list = [entity_temp[feature_axis] for entity_temp in dataset]
-    uniq_feature_set = set(feature_value_list)
-    for feature_value in uniq_feature_set:
-        sub_feature_name_list = feature_name_list[:]
-        tree[feature_name][feature_value] = create_decision_tree__id3(
-            dataset = split_dataset(
-                dataset,
-                axis=feature_axis,
-                value=feature_value
-            ),
-            feature_name_list = sub_feature_name_list
+    feature_value_list = [row[feature_name] for index, row in df.iterrows()]
+    uniq_feature_value_set = set(feature_value_list)
+    for feature_value in uniq_feature_value_set:
+        sub_df = split_dataset(
+            df=df,
+            feature_name=feature_name,
+            feature_value=feature_value
         )
-    
+        
+        tree[feature_name][feature_value] = create_decision_tree__id3(df=sub_df)
+        
     return tree
 
 
-"""
-{
-    "is_big": {
-        0: "N",
-        1: {
-            "is_white": {
-                0: "N",
-                1: "Y"
+def get_leaf_qty(tree_dict):
+    """
+    {
+        'is_big': {
+            0: 'N',
+            1: {
+                'is_white': {
+                    0: 'N',
+                    1: 'Y'
+                }
             }
         }
     }
-}
-
-tree_dict = {"is_big": {0: "N", 1: {"is_white": {0: "N", 1: "Y"}}}}
-"""
-
-def get_leaf_qty(tree_dict):
+    """
     leaf_qty = 0
-    first_key = list(tree_dict.keys())[0]
-    sub_tree_dict = tree_dict[first_key]
+    first_feature = list(tree_dict.keys())[0]
+    
+    sub_tree_dict = tree_dict[first_feature]
     for key in sub_tree_dict.keys():
-        if type(sub_tree_dict[key]).__name__ == "dict": # if type(sub_tree_dict[key]) is dict
-            leaf_qty = leaf_qty + get_leaf_qty(sub_tree_dict[key])
-        else:
+        if type(sub_tree_dict[key]).__name__ == "dict":
+            leaf_qty += get_leaf_qty(sub_tree_dict[key])
+        else: # stop condition ==> leaf node
             leaf_qty += 1
             
     return leaf_qty
 
 
 def get_tree_depth(tree_dict):
-    max_depth = 0
-    first_key = list(tree_dict.keys())[0]
-    sub_tree_dict = tree_dict[first_key]
+    depth__max = 0
+    first_feature = list(tree_dict.keys())[0]
+    
+    sub_tree_dict = tree_dict[first_feature]
     for key in sub_tree_dict.keys():
         if type(sub_tree_dict[key]) is dict:
-            this_depth = 1 + get_tree_depth(sub_tree_dict[key])
+            depth__current = 1 + get_tree_depth(sub_tree_dict[key])
         else:
-            this_depth = 1
-            
-        if this_depth > max_depth:
-            max_depth = this_depth
+            depth__current = 1
+        
+        if depth__current > depth__max:
+            depth__max = depth__current
     
-    return max_depth
+    return depth__max
+
+
+def save_tree(
+    input_tree,
+    filepath
+):
+    with open(filepath, "wb") as f_write:
+        pickle.dump(input_tree, f_write)
+
+
+def load_tree(filepath):
+    with open(filepath, "rb") as f_read:
+        tree = pickle.load(f_read)
+    
+    return tree
