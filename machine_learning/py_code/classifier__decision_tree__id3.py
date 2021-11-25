@@ -14,7 +14,6 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-
 sys.path.append("/Users/xuzhu/Desktop/code/assistants") # my package
 from toolbox.os_assistant import scan_folder
 
@@ -179,17 +178,9 @@ def create_decision_tree__id3(df):
 
 def get_leaf_qty(tree_dict):
     """
-    {
-        'is_big': {
-            0: 'N',
-            1: {
-                'is_white': {
-                    0: 'N',
-                    1: 'Y'
-                }
-            }
-        }
-    }
+    {'is_big': {0: 'N',
+                1: {'is_white': {0: 'N',
+                                 1: 'Y'}}}}
     """
     leaf_qty = 0
     first_feature = list(tree_dict.keys())[0]
